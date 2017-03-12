@@ -1,6 +1,6 @@
 'use strict';
 
-const fs = require('fs');
+const fsp = require('fs-promise');
 const path = require('path');
 const uuid = require('uuid/v4');
 const process = require('child_process');
@@ -45,21 +45,23 @@ class CodeSaver {
      * пользователя
      */
     createFiles() {
-        return new Promise((resolve, reject) => {
-            let codeId = uuid();
-            let codeDirectory = path.join(__dirname, '..', 'docker_code', codeId);
+        let codeId = uuid();
+        let codeDirectory = path.join(__dirname, '..', 'docker_code', codeId);
 
-            fs.mkdir(codeDirectory, () => {
+        return fsp.mkdir(codeDirectory)
+            .then(() => {
                 let fileName = path.join(codeDirectory, this.getFileNameByProgrammingLanguage());
-                fs.writeFile(fileName, this.config.code, () => {
-                    let stdinText = this.config.stdin || '';
-                    fs.writeFile(path.join(codeDirectory, 'stdin.txt'), stdinText, () => {
-                        // Возвращаем путь к папке с исходным кодом для запуска в контейнере
-                        return resolve(codeDirectory);
-                    });
+                return fsp.writeFile(fileName, this.config.code);
+            })
+            .then(() => {
+                let stdinText = this.config.stdin || '';
+                return fsp.writeFile(path.join(codeDirectory, 'stdin.txt'), stdinText);
+            })
+            .then(() => {
+                return new Promise((resolve) => {
+                    return resolve(codeDirectory);
                 });
             });
-        });
     }
 }
 
