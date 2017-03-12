@@ -29,6 +29,11 @@ socket_io.on('connection', (socket) => {
     и эти настройки надо применить на остальных редакторах
      */
     socket.on('settings', (event) => {
+
+        /*
+        Транслируем настройки всем пользователям которые с нами кодят
+        одновременно
+         */
         socket.broadcast.emit('new-settings', event);
     })
 });
