@@ -4,6 +4,8 @@ const socket_io = require('socket.io')();
 
 /*
 Это событие происходит когда новый клиент соединился с сервером
+
+TODO: Подумать над тем, как можно сделать обработку похожих событий централизовано
  */
 socket_io.on('connection', (socket) => {
     console.log('new client connected');
@@ -21,6 +23,14 @@ socket_io.on('connection', (socket) => {
          */
         socket.broadcast.emit('other-user-change-code', event);
     });
+
+    /*
+    Это событие посылпается когда один из программистов изменил настройки редактора
+    и эти настройки надо применить на остальных редакторах
+     */
+    socket.on('settings', (event) => {
+        socket.broadcast.emit('new-settings', event);
+    })
 });
 
 module.exports = socket_io;
