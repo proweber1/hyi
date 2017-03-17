@@ -1,6 +1,6 @@
 'use strict';
 
-const socket_io = require('socket.io')();
+const io = require('socket.io')();
 const ShareCode = require('./services/ShareCode');
 
 /*
@@ -8,7 +8,7 @@ const ShareCode = require('./services/ShareCode');
 
 TODO: Подумать над тем, как можно сделать обработку похожих событий централизовано
  */
-socket_io.on('connection', (socket) => {
+io.on('connection', (socket) => {
     console.log('new client connected');
 
     /*
@@ -30,6 +30,8 @@ socket_io.on('connection', (socket) => {
     для клиента
      */
     socket.on('run-code', (request) => {
+        io.sockets.emit('before-code-run');
+
         const share_code = new ShareCode(request);
         share_code.runCode();
 
@@ -37,7 +39,7 @@ socket_io.on('connection', (socket) => {
          Все что нам валит докер мы отправляем на клиента, чтобы транслировать все
          это в консоль на клиентской части
          */
-        share_code.on('stdout', stdout => socket.emit('run-code-output', stdout));
+        share_code.on('docker-output', data => io.sockets.emit('run-code-output', data));
     });
 
     /*
@@ -45,6 +47,7 @@ socket_io.on('connection', (socket) => {
     и эти настройки надо применить на остальных редакторах
      */
     socket.on('settings', (event) => {
+        console.log(event);
 
         /*
         Транслируем настройки всем пользователям которые с нами кодят
@@ -54,4 +57,4 @@ socket_io.on('connection', (socket) => {
     })
 });
 
-module.exports = socket_io;
+module.exports = io;

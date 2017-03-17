@@ -58,9 +58,7 @@ class CodeSaver {
                 return fsp.writeFile(path.join(codeDirectory, 'stdin.txt'), stdinText);
             })
             .then(() => {
-                return new Promise((resolve) => {
-                    return resolve(codeDirectory);
-                });
+                return new Promise((resolve) => resolve(codeDirectory));
             });
     }
 }
@@ -102,28 +100,51 @@ class ShareCode extends EventEmitter {
      */
     runCode() {
         this.code_saver.createFiles()
-            .then(this.runDocker.bind(this))
-            .catch((err) => {
-                console.log(err);
-            });
+            .then(this.runDocker.bind(this));
     }
 
     /**
-     * Запускает процесс доккера и следит за ним пока он выполняется, во
-     * время выполнения читает его stdout
+     * Запускает процесс докера и следит за его stdout и stderr, и сразу же их
+     * транслирует на клиенсткую часть системы
      *
-     * @param codeDirectory
+     * @param codeDirectory Папка с запускаемым кодом (чтобы прокинуть ее в контейнер)
      */
     runDocker(codeDirectory) {
-        let runner = this.getRunnerName();
-        const command = `docker run -v ${codeDirectory}:/shared-code codeshare /runners/${runner}`;
+        const runner = this.getRunnerName()
+            , containerName = uuid();
 
-        process.exec(command, (err, stdout) => {
-            // Recursive remove code directory
-            process.exec(`rm -r ${codeDirectory}`);
+        const proc = process.spawn('docker', ['run', '-v', `${codeDirectory}:/shared-code`, '--name', containerName, 'codeshare', `/runners/${runner}`]);
 
-            this.emit('stdout', stdout);
+        proc.stdout.on('data', this._emitStdout.bind(this));
+        proc.stderr.on('data', this._emitStdout.bind(this));
+
+        proc.on('close', (exitCode) => {
+            ShareCode._downDockerContainerAndRemoveCode(codeDirectory, containerName);
+            this._emitStdout(`Process finished with: ${exitCode} status code`);
         });
+    }
+
+    /**
+     * Вынес в отдельный метод чтобы не дублировать это внутри отлова событий
+     *
+     * @param data Данные из докера
+     * @private
+     */
+    _emitStdout(data) {
+        this.emit('docker-output', data.toString());
+    }
+
+    /**
+     * Удаляем докер контейнер (чтобы не засирать память) и удаляем код с сервера
+     * чтобы так же освободить ресурсы
+     *
+     * @param codeDirectory
+     * @param containerName
+     * @private
+     */
+    static _downDockerContainerAndRemoveCode(codeDirectory, containerName) {
+        process.exec(`rm -r ${codeDirectory}`);
+        process.exec(`docker rm ${containerName}`);
     }
 }
 
