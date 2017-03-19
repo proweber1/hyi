@@ -102,6 +102,9 @@ io.on('connection', (socket) => {
         share_code.on('docker-output', data => {
             io.sockets.to(roomName).emit('run-code-output', data);
         });
+
+        share_code.on('docker-finish', () =>
+            io.sockets.to(roomName).emit('run-code-finish'));
     });
 
     /*

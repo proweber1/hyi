@@ -62,7 +62,7 @@ class ShareCode extends EventEmitter {
                     codeDirectory,
                     this.getRunnerName(),
                     containerName,
-                    ShareCode.downDockerContainerAndRemoveCode
+                    this.downDockerContainerAndRemoveCode.bind(this)
                 );
             });
     }
@@ -83,9 +83,11 @@ class ShareCode extends EventEmitter {
      * @param codeDirectory
      * @param containerName
      */
-    static downDockerContainerAndRemoveCode(codeDirectory, containerName) {
+    downDockerContainerAndRemoveCode(codeDirectory, containerName) {
         process.exec(`rm -r ${codeDirectory}`);
         process.exec(`docker rm ${containerName}`);
+
+        this.emit('docker-finish');
     }
 }
 
