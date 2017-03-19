@@ -1,15 +1,22 @@
 'use strict';
 
-const io = require('socket.io')();
+const config = require('./config/application');
+const io = require('socket.io')({
+    origins: config.socketSecurityOrigins
+});
+
 const ShareCode = require('./services/ShareCode');
 const redis = require('./connections/redis');
 const CodeSync = require('./services/CodeSync')
     , codeSync = new CodeSync(redis);
+const Settings = require('./services/Settings')
+    , settings = new Settings(redis);
+const logger = require('./logger');
 
 const StreamingAlgorithm = require('./services/share_code_algorithms/Streaming');
 
 const socketRooms = new Map();
-const roomsProgrammingLang = new Map();
+const roomSettings = new Map();
 
 /*
 Это событие происходит когда новый клиент соединился с сервером
@@ -19,6 +26,8 @@ TODO: Убрать дублирование получения комнаты с
 TODO: Подумать как снизить нагрузку на хранилище при записи большого количества данных
  */
 io.on('connection', (socket) => {
+
+    logger.info('New client connected');
 
     /*
     Когда сокет коннектиться к нам, то мы должны его записать в группу, если
@@ -32,8 +41,20 @@ io.on('connection', (socket) => {
         socket.join(roomId);
         socketRooms.set(socket, roomId);
 
-        codeSync.fetchState(roomId)
-            .then(state => socket.emit('code-sync', state));
+        settings.fetchSettings(roomId)
+            .then(settings => {
+                if (settings) {
+                    logger.info(`Settings load successful for ${roomId} room`);
+                    socket.emit('room-settings', settings);
+                    roomSettings.set(roomId, settings);
+                }
+
+                return codeSync.fetchState(roomId);
+            })
+            .then(state => {
+                logger.info(`Code sync for ${roomId} room, languages`, JSON.stringify(Object.keys(state)));
+                socket.emit('code-sync', state)
+            });
     });
 
     /*
@@ -44,9 +65,12 @@ io.on('connection', (socket) => {
     socket.on('code-change', (event) => {
 
         const socketRoom = socketRooms.get(socket);
-        const lang = roomsProgrammingLang.get(socketRoom) || 'javascript';
+        const settings = roomSettings.get(socketRoom);
 
+        const lang = (settings && settings.languages) ? settings.languages : 'javascript';
         codeSync.saveCode(socketRoom, lang, event);
+
+        logger.info(`Users write code in ${socketRoom} on ${lang} language`);
 
         /*
         На это событие бекенд просто рассылает этот эвент с клиентам остальным
@@ -62,21 +86,21 @@ io.on('connection', (socket) => {
     для клиента
      */
     socket.on('run-code', (request) => {
-        io.sockets
-            .to(socketRooms.get(socket))
-            .emit('before-code-run');
+        const roomName = socketRooms.get(socket);
+
+        io.sockets.to(roomName).emit('before-code-run');
 
         const share_code = new ShareCode(request, new StreamingAlgorithm());
         share_code.runCode();
+
+        logger.info(`Code run in room: ${roomName}`, JSON.stringify(request));
 
         /*
          Все что нам валит докер мы отправляем на клиента, чтобы транслировать все
          это в консоль на клиентской части
          */
         share_code.on('docker-output', data => {
-            io.sockets
-                .to(socketRooms.get(socket))
-                .emit('run-code-output', data);
+            io.sockets.to(roomName).emit('run-code-output', data);
         });
     });
 
@@ -86,14 +110,18 @@ io.on('connection', (socket) => {
      */
     socket.on('settings', (event) => {
 
-        roomsProgrammingLang.set(socketRooms.get(socket), event.languages);
+        const socketRoom = socketRooms.get(socket);
+        roomSettings.set(socketRoom, event);
+        settings.pushSettings(socketRoom, event);
+
+        logger.info(`Pushed new settings to ${socketRoom}`, JSON.stringify(event));
 
         /*
         Транслируем настройки всем пользователям которые с нами кодят
         одновременно
          */
         socket.broadcast
-            .to(socketRooms.get(socket))
+            .to(socketRoom)
             .emit('new-settings', event);
     });
 
@@ -103,7 +131,11 @@ io.on('connection', (socket) => {
     памяти в системе.
      */
     socket.on('disconnect', () => {
+        const roomName = socketRooms.get(socket);
         socketRooms.delete(socket);
+        roomSettings.delete(roomName);
+
+        logger.info(`Client disconnected, room_id: ${roomName}`);
     });
 });
 

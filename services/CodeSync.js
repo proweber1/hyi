@@ -24,7 +24,7 @@ class CodeSync {
      * @returns {*} промис
      */
     saveCode(socketRoom, lang, delta) {
-        return this.redis.rpushAsync(`${socketRoom}:${lang}`, JSON.stringify(delta));
+        return this.redis.rpushAsync(`${socketRoom}:langs:${lang}`, JSON.stringify(delta));
     }
 
     /**
@@ -48,7 +48,7 @@ class CodeSync {
      * @private
      */
     _getKeysBySocketRoom(socketRoom) {
-        return this.redis.keysAsync(`${socketRoom}:*`);
+        return this.redis.keysAsync(`${socketRoom}:langs:*`);
     }
 
     /**
@@ -80,7 +80,7 @@ class CodeSync {
         let result = {};
 
         langs.forEach((v, k) => {
-            result[v.split(':')[1]] = deltas[k].map(JSON.parse);
+            result[v.split(':').pop()] = deltas[k].map(JSON.parse);
         });
 
         return result;

@@ -12,7 +12,9 @@ class Streaming {
         this.exitCodes = {
             0: 'The process was completed successfully',
             143: 'The process was stopped due to timeout'
-        }
+        };
+
+        this.stringBuffer = '';
     }
 
     /**
@@ -25,10 +27,11 @@ class Streaming {
     runDocker(emitter, codeDirectory, runner, containerName, afterDown) {
         const process = spawn('docker', ['run', '-v', `${codeDirectory}:/shared-code`, '--name', containerName, 'codeshare', `/runners/${runner}`]);
 
-        process.stdout.on('data', Streaming._emitData.bind(this, emitter));
-        process.stderr.on('data', Streaming._emitData.bind(this, emitter));
+        process.stdout.on('data', this._bufferingData.bind(this));
+        process.stderr.on('data', this._bufferingData.bind(this));
 
         process.on('close', (exitCode) => {
+            emitter.emitOutput(this.stringBuffer + '\n');
             emitter.emitOutput(this.exitCodes[exitCode] || 'Unknown completion code');
 
             if (afterDown && 'function' === typeof afterDown) {
@@ -37,8 +40,16 @@ class Streaming {
         });
     }
 
-    static _emitData(emitter, data) {
-        emitter.emitOutput(data.toString());
+    /**
+     * Это буферизированный output, посылает данные на клиента только тогда, когда
+     * накопилось определенное количество данных, чтобы не затравить клиентскую часть
+     * данными, проблема с зависанием браузера
+     *
+     * @param data
+     * @private
+     */
+    _bufferingData(data) {
+        this.stringBuffer += data.toString();
     }
 }
 
