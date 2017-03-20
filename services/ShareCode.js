@@ -45,6 +45,8 @@ class ShareCode extends EventEmitter {
             return 'php.sh';
         } else if ('java' === this.lang) {
             return 'java.sh';
+        } else if ('python' === this.lang) {
+            return 'python.sh';
         } else {
             throw new Error('undefined language');
         }

@@ -33,6 +33,8 @@ class CodeSaver {
             return 'main.php';
         } else if ('java' === language) {
             return 'Main.java';
+        } else if ('python' === language) {
+            return 'main.py';
         } else {
             throw new Error('Undefined programming language');
         }
