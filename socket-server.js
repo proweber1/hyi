@@ -46,11 +46,11 @@ io.on('connection', (socket) => {
 
         settings.fetchSettings(roomId)
             .then(settings => {
-                if (settings) {
-                    logger.info(`Settings load successful for ${roomId} room`);
-                    socket.emit('room-settings', settings);
-                    roomSettings.set(roomId, settings);
-                }
+                const finalSettings = settings || config.client.defaultSettings;
+
+                logger.info(`Settings load successful for ${roomId} room`, JSON.stringify(finalSettings));
+                socket.emit('room-settings', finalSettings);
+                roomSettings.set(roomId, finalSettings);
 
                 return codeSync.fetchState(roomId);
             })
