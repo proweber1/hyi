@@ -24,6 +24,7 @@ const roomSettings = new Map();
 TODO: Подумать над тем, как можно сделать обработку похожих событий централизовано
 TODO: Убрать дублирование получения комнаты сокета
 TODO: Подумать как снизить нагрузку на хранилище при записи большого количества данных
+TODO: Перенести события чата в другой файл 🙂
  */
 io.on('connection', (socket) => {
 
@@ -40,6 +41,8 @@ io.on('connection', (socket) => {
 
         socket.join(roomId);
         socketRooms.set(socket, roomId);
+
+        socket.broadcast.to(roomId).emit('new-client-connected');
 
         settings.fetchSettings(roomId)
             .then(settings => {
@@ -129,12 +132,28 @@ io.on('connection', (socket) => {
     });
 
     /*
+    События чата
+
+    Пользователь прислал сообщение, мы отправили его всем сокетам в комнате в
+    которой находится пользователь
+     */
+    socket.on('send-message', (event) => {
+        const roomId = socketRooms.get(socket);
+
+        logger.info(`New message in room: ${roomId}, message event: `, JSON.stringify(event));
+        io.sockets.to(roomId).emit('new-message', event);
+    });
+
+    /*
     Когда пользователь отключается от сервера, нужно удалить его из списка комнат
     и почистить буфер кода если это был последний клиент, чтобы не допускать утечек
     памяти в системе.
      */
     socket.on('disconnect', () => {
         const roomName = socketRooms.get(socket);
+
+        socket.broadcast.to(roomName).emit('client-disconnected');
+
         socketRooms.delete(socket);
         roomSettings.delete(roomName);
 
