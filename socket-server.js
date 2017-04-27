@@ -1,38 +1,29 @@
 'use strict';
 
 const config = require('./config/application');
+
 const io = require('socket.io')({
-    origins: config.socketSecurityOrigins
+    origins: config.modules.socket.socketSecurityOrigins
 });
 
-const ShareCode = require('./services/ShareCode');
-const redis = require('./connections/redis');
-const CodeSync = require('./services/CodeSync')
-    , codeSync = new CodeSync(redis);
-const Settings = require('./services/Settings')
-    , settings = new Settings(redis);
-const logger = require('./logger');
+const ShareCode = require('./modules/sharing/code-saver.sharing')
+    , redis = require('./connections/redis')
+    , CodeSync = require('./modules/sync/code-sync.sync')
+    , codeSync = new CodeSync(redis)
+    , Settings = require('./modules/settings/settings-provider.settings')
+    , settings = new Settings(redis)
+    , logger = require('./logger')
+    , StreamingAlgorithm = require('./modules/docker/run-algorithms/streaming.docker')
+    , socketRooms = new Map()
+    , roomSettings = new Map();
 
-const StreamingAlgorithm = require('./services/share_code_algorithms/Streaming');
-
-const socketRooms = new Map();
-const roomSettings = new Map();
-
-/*
-Это событие происходит когда новый клиент соединился с сервером
-
-TODO: Подумать над тем, как можно сделать обработку похожих событий централизовано
-TODO: Убрать дублирование получения комнаты сокета
-TODO: Подумать как снизить нагрузку на хранилище при записи большого количества данных
-TODO: Перенести события чата в другой файл 🙂
- */
 io.on('connection', (socket) => {
 
     logger.info('New client connected');
 
     /*
-    Когда сокет коннектиться к нам, то мы должны его записать в группу, если
-    группа уже есть, то отсылаем ему код для синхронизации
+     When a socket connects to us, then we need to write it to a group, if the group
+     already exists, then we send it the code for synchronization
      */
     socket.on('join-to-room', (roomId) => {
         if (Object.keys(socket.rooms).length >= 2) {
@@ -61,9 +52,9 @@ io.on('connection', (socket) => {
     });
 
     /*
-    Это событие должен послать клиент, когда внутри окна редактора что-то
-    изменилось, событие должно быть таким, чтобы сам клиент его потом мог
-    разобрать и как-то обработать.
+     This event should be sent by the client, when something has changed
+     inside the editor window, the event should be such that the client
+     can then parse it and somehow process it.
      */
     socket.on('code-change', (event) => {
 
@@ -76,8 +67,8 @@ io.on('connection', (socket) => {
         logger.info(`Users write code in ${socketRoom} on ${lang} language`);
 
         /*
-        На это событие бекенд просто рассылает этот эвент с клиентам остальным
-        клиентам доступным сейчас, чтобы обновить у них окно редактора
+         At this event, the backend simply sends this event with clients to
+         other clients available now to update their editor window
          */
         socket.broadcast
             .to(socketRoom)
@@ -85,8 +76,8 @@ io.on('connection', (socket) => {
     });
 
     /*
-    Данный метод запускает код на исполнение в докер контейнере и стримит потом ответ
-    для клиента
+     This method starts the code for execution in the docker
+     container and then feeds the response for the client
      */
     socket.on('run-code', (request) => {
         const roomName = socketRooms.get(socket);
@@ -99,8 +90,8 @@ io.on('connection', (socket) => {
         logger.info(`Code run in room: ${roomName}`, JSON.stringify(request));
 
         /*
-         Все что нам валит докер мы отправляем на клиента, чтобы транслировать все
-         это в консоль на клиентской части
+         Everything that the docker brings down to us is sent to the
+         client to broadcast it all to the console on the client side
          */
         share_code.on('docker-output', data => {
             io.sockets.to(roomName).emit('run-code-output', data);
@@ -111,8 +102,8 @@ io.on('connection', (socket) => {
     });
 
     /*
-    Это событие посылпается когда один из программистов изменил настройки редактора
-    и эти настройки надо применить на остальных редакторах
+     This event is served when one of the programmers has changed the editor's
+     settings and these settings should be applied to the rest of the editors
      */
     socket.on('settings', (event) => {
 
@@ -123,8 +114,7 @@ io.on('connection', (socket) => {
         logger.info(`Pushed new settings to ${socketRoom}`, JSON.stringify(event));
 
         /*
-        Транслируем настройки всем пользователям которые с нами кодят
-        одновременно
+         We broadcast the settings to all users who code with us at the same time
          */
         socket.broadcast
             .to(socketRoom)
@@ -132,10 +122,10 @@ io.on('connection', (socket) => {
     });
 
     /*
-    События чата
+     Chat events
 
-    Пользователь прислал сообщение, мы отправили его всем сокетам в комнате в
-    которой находится пользователь
+     The user sent a message, we sent it to all the sockets in
+     the room in which the user is located
      */
     socket.on('send-message', (event) => {
         const roomId = socketRooms.get(socket);
@@ -145,9 +135,9 @@ io.on('connection', (socket) => {
     });
 
     /*
-    Когда пользователь отключается от сервера, нужно удалить его из списка комнат
-    и почистить буфер кода если это был последний клиент, чтобы не допускать утечек
-    памяти в системе.
+     When the user disconnects from the server, you need to remove it from
+     the list of rooms and clean the code buffer if it was the last client
+     to prevent memory leaks in the system.
      */
     socket.on('disconnect', () => {
         const roomName = socketRooms.get(socket);

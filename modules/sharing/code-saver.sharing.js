@@ -3,6 +3,7 @@
 const fsp = require('fs-promise');
 const path = require('path');
 const uuid = require('uuid/v4');
+const applicationConfig = require('../../config/application');
 
 /**
  * Класс который сохраняет код который прислал пользователь, чтобы
@@ -20,24 +21,17 @@ class CodeSaver {
     /**
      * Собирает имя файла по языку программирования
      *
-     * TODO: Переделать, перенести в массив какой-нибудь что-ли
-     *
      * @returns {*}
      */
     getFileNameByProgrammingLanguage() {
         const language = this.config.programmingLanguage;
+        const languageFileNames = applicationConfig.modules.sharing.languageFileNames;
 
-        if ('javascript' === language) {
-            return 'main.js';
-        } else if ('php' === language) {
-            return 'main.php';
-        } else if ('java' === language) {
-            return 'Main.java';
-        } else if ('python' === language) {
-            return 'main.py';
-        } else {
-            throw new Error('Undefined programming language');
+        if (!languageFileNames.hasOwnProperty(language)) {
+            throw new Error('Undefined language');
         }
+
+        return languageFileNames[language];
     }
 
     /**
@@ -45,21 +39,23 @@ class CodeSaver {
      * пользователя
      */
     createFiles() {
-        let codeId = uuid();
-        let codeDirectory = path.join(__dirname, '..', 'docker_code', codeId);
+        const codeId = uuid();
+        const codeDirectory = path.join(__dirname, '..', 'docker_code', codeId);
 
         return fsp.mkdir(codeDirectory)
             .then(() => {
-                let fileName = path.join(codeDirectory, this.getFileNameByProgrammingLanguage());
-                return fsp.writeFile(fileName, this.config.code);
+                return fsp.writeFile(
+                    path.join(codeDirectory, this.getFileNameByProgrammingLanguage()),
+                    this.config.code
+                );
             })
             .then(() => {
-                let stdinText = this.config.stdin || '';
-                return fsp.writeFile(path.join(codeDirectory, 'stdin.txt'), stdinText);
+                return fsp.writeFile(
+                    path.join(codeDirectory, 'stdin.txt'),
+                    this.config.stdin || ''
+                );
             })
-            .then(() => {
-                return new Promise((resolve) => resolve(codeDirectory));
-            });
+            .then(() => codeDirectory);
     }
 }
 
